@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ---------------------------------------------------------------------------
-# GHOSTDAG Parameter Explorer - macOS / Linux Launcher
+# GHOSTDAG Parameter Explorer - macOS
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,18 +33,21 @@ if [ ! -f "$PORTABLE_DIR/bin/python3" ]; then
     echo "[INFO] Compatible Python (>= 3.10) not found on host system."
     echo "[INFO] Downloading isolated standalone Python 3.13 runtime..."
 
-    # Download via curl or wget
+    # Download via curl (-f fail fast on HTTP errors) or wget
     if command -v curl >/dev/null 2>&1; then
-        curl -sSL "$PYTHON_URL" -o "$TAR_PATH"
+        if ! curl -fsSL "$PYTHON_URL" -o "$TAR_PATH"; then
+            echo "[ERROR] Download failed via curl."
+            rm -f "$TAR_PATH"
+            exit 1
+        fi
     elif command -v wget >/dev/null 2>&1; then
-        wget -q "$PYTHON_URL" -O "$TAR_PATH"
+        if ! wget -q "$PYTHON_URL" -O "$TAR_PATH"; then
+            echo "[ERROR] Download failed via wget."
+            rm -f "$TAR_PATH"
+            exit 1
+        fi
     else
         echo "[ERROR] Neither curl nor wget is available to download Python runtime."
-        exit 1
-    fi
-
-    if [ ! -f "$TAR_PATH" ]; then
-        echo "[ERROR] Download failed. Please check your network connection."
         exit 1
     fi
 
@@ -55,12 +58,13 @@ if [ ! -f "$PORTABLE_DIR/bin/python3" ]; then
     elif command -v sha256sum >/dev/null 2>&1; then
         COMPUTED_HASH=$(sha256sum "$TAR_PATH" | awk '{print $1}')
     else
-        echo "[WARNING] Neither shasum nor sha256sum found. Skipping hash check."
-        COMPUTED_HASH="$EXPECTED_SHA256"
+        echo "[ERROR] System lacks 'shasum' or 'sha256sum' to verify download integrity."
+        rm -f "$TAR_PATH"
+        exit 1
     fi
 
     if [ "$COMPUTED_HASH" != "$EXPECTED_SHA256" ]; then
-        echo "[ERROR] SHA-256 checksum verification failed!"
+        echo "[ERROR] SHA-256 checksum verification failed! File may be corrupt or tampered with."
         rm -f "$TAR_PATH"
         exit 1
     fi
@@ -68,8 +72,7 @@ if [ ! -f "$PORTABLE_DIR/bin/python3" ]; then
     # Extract
     echo "[INFO] Checksum verified. Extracting Python runtime..."
     mkdir -p "$PORTABLE_DIR"
-    tar -xzf "$TAR_PATH" -C "$PORTABLE_DIR" --strip-components=1
-    if [ $? -ne 0 ]; then
+    if ! tar -xzf "$TAR_PATH" -C "$PORTABLE_DIR" --strip-components=1; then
         echo "[ERROR] Failed to extract runtime archive."
         rm -f "$TAR_PATH"
         exit 1
@@ -81,8 +84,7 @@ fi
 # Ensure .venv exists inside the local fallback directory
 if [ ! -f "$VENV_DIR/bin/python" ]; then
     echo "[INFO] Creating isolated virtual environment (.venv)..."
-    "$PORTABLE_DIR/bin/python3" -m venv "$VENV_DIR"
-    if [ $? -ne 0 ]; then
+    if ! "$PORTABLE_DIR/bin/python3" -m venv "$VENV_DIR"; then
         echo "[ERROR] Failed to create virtual environment inside local runtime."
         exit 1
     fi
