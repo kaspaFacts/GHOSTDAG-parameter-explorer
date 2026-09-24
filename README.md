@@ -1,6 +1,16 @@
-# GHOSTDAG Parameter Calculator
+# GHOSTDAG Parameter Explorer
 
-An educational reference implementation and test harness for calculating GHOSTDAG parameters (`k`, anticone size expectation, probability distributions, and block time bounds).
+An educational interactive CLI tool for exploring Kaspa's GHOSTDAG consensus mechanics, computing $k$-parameter bounds, anticone size expectations ($x = 2D\lambda$), and DAG concurrency probability distributions.
+
+---
+
+## Key Features
+
+* **Interactive Explorer Menu:** Run parameter experiments step-by-step without typing terminal arguments.
+* **Calculate Minimal $k$:** Derive required $k$ values and anticone expectations from target block rates (BPS) or block creation times.
+* **DAG Concurrency Distribution:** Visualize exact Poisson probability distributions $P(n)$ to see expected parallel block structures under actual network propagation delays.
+* **Block Time Range Bounds:** Calculate precise inclusive millisecond ranges for target $k$ values ($k \in [1, 18]$).
+* **Zero-Dependency Launcher:** Automatically handles local Python 3.13 setup without system-wide modifications.
 
 ---
 
