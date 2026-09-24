@@ -1,35 +1,92 @@
 #!/usr/bin/env bash
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+# ---------------------------------------------------------------------------
+# GHOSTDAG Parameter Explorer - macOS / Linux Launcher
+# ---------------------------------------------------------------------------
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+
 PORTABLE_DIR="$SCRIPT_DIR/python_313_runtime"
 VENV_DIR="$SCRIPT_DIR/.venv"
+PYTHON_TAR="python-3.13.2-macos-apple-silicon.tar.gz"
+TAR_PATH="$SCRIPT_DIR/$PYTHON_TAR"
+PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20250212/cpython-3.13.2+20250212-aarch64-apple-darwin-install_only.tar.gz"
 
-# Step 1: Check for existing local isolated Python 3.13 runtime
-if [ -f "$PORTABLE_DIR/bin/python3.13" ]; then
-    PYTHON_CMD="$PORTABLE_DIR/bin/python3.13"
-# Step 1 (cont): Check if python3.13 is natively installed
-elif command -v python3.13 &>/dev/null; then
-    echo "[OK] Found system Python 3.13."
-    PYTHON_CMD="python3.13"
-else
-    # Step 2: System lacks Python 3.13. Fetch standalone official Python 3.13 binary build
-    echo "Python 3.13 not found. Downloading isolated Python 3.13 package..."
-    mkdir -p "$PORTABLE_DIR"
-    
-    # Download standalone Python 3.13 build
-    PKG_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-3.13.0+20241016-aarch64-apple-darwin-install_only.tar.gz"
-    if [[ "$(uname -m)" == "x86_64" ]]; then
-        PKG_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-3.13.0+20241016-x86_64-apple-darwin-install_only.tar.gz"
+# Official SHA-256 for standalone Python build
+EXPECTED_SHA256="4d1a3c7f99ee307d06a9db3f56bc38bc602b9f6266adcae3c50965022137976e"
+
+# ---------------------------------------------------------------------------
+# 1. Primary path: Native Python version check (>= 3.10)
+# ---------------------------------------------------------------------------
+if command -v python3 >/dev/null 2>&1; then
+    if python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >/dev/null 2>&1; then
+        echo "[OK] Running via system Python 3..."
+        exec python3 "$SCRIPT_DIR/ghostdag_calc.py" "$@"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Fallback path: Ensure isolated runtime and .venv exist locally
+# ---------------------------------------------------------------------------
+if [ ! -f "$PORTABLE_DIR/bin/python3" ]; then
+    echo "[INFO] Compatible Python (>= 3.10) not found on host system."
+    echo "[INFO] Downloading isolated standalone Python 3.13 runtime..."
+
+    # Download via curl or wget
+    if command -v curl >/dev/null 2>&1; then
+        curl -sSL "$PYTHON_URL" -o "$TAR_PATH"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q "$PYTHON_URL" -O "$TAR_PATH"
+    else
+        echo "[ERROR] Neither curl nor wget is available to download Python runtime."
+        exit 1
     fi
 
-    curl -L "$PKG_URL" \vert{} tar -xz -C "$PORTABLE_DIR" --strip-components=1
-    PYTHON_CMD="$PORTABLE_DIR/bin/python3.13"
+    if [ ! -f "$TAR_PATH" ]; then
+        echo "[ERROR] Download failed. Please check your network connection."
+        exit 1
+    fi
+
+    # Verify SHA-256 Integrity
+    echo "[INFO] Verifying download integrity (SHA-256)..."
+    if command -v shasum >/dev/null 2>&1; then
+        COMPUTED_HASH=$(shasum -a 256 "$TAR_PATH" | awk '{print $1}')
+    elif command -v sha256sum >/dev/null 2>&1; then
+        COMPUTED_HASH=$(sha256sum "$TAR_PATH" | awk '{print $1}')
+    else
+        echo "[WARNING] Neither shasum nor sha256sum found. Skipping hash check."
+        COMPUTED_HASH="$EXPECTED_SHA256"
+    fi
+
+    if [ "$COMPUTED_HASH" != "$EXPECTED_SHA256" ]; then
+        echo "[ERROR] SHA-256 checksum verification failed!"
+        rm -f "$TAR_PATH"
+        exit 1
+    fi
+
+    # Extract
+    echo "[INFO] Checksum verified. Extracting Python runtime..."
+    mkdir -p "$PORTABLE_DIR"
+    tar -xzf "$TAR_PATH" -C "$PORTABLE_DIR" --strip-components=1
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] Failed to extract runtime archive."
+        rm -f "$TAR_PATH"
+        exit 1
+    fi
+
+    rm -f "$TAR_PATH"
 fi
 
-# Step 3: Create virtual environment using Python 3.13
-if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating Python 3.13 virtual environment (.venv)..."
-    "$PYTHON_CMD" -m venv "$VENV_DIR"
+# Ensure .venv exists inside the local fallback directory
+if [ ! -f "$VENV_DIR/bin/python" ]; then
+    echo "[INFO] Creating isolated virtual environment (.venv)..."
+    "$PORTABLE_DIR/bin/python3" -m venv "$VENV_DIR"
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] Failed to create virtual environment inside local runtime."
+        exit 1
+    fi
 fi
 
-# Step 4: Launch the tool
-"$VENV_DIR/bin/python" "$SCRIPT_DIR/ghostdag_calc.py" "$@"
+echo "[OK] Running via local isolated virtual environment..."
+exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/ghostdag_calc.py" "$@"
